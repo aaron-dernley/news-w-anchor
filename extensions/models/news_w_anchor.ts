@@ -549,6 +549,10 @@ export const model = {
           dryRun,
         } = context.globalArgs;
         const now = new Date().toISOString();
+        context.logger.info(
+          "broadcast: checking {count} feeds (dryRun={dryRun})",
+          { count: feeds.length, dryRun },
+        );
 
         const ledger = await readLedger(context);
         const seen = new Set(ledger?.entries.map((e) => e.id) ?? []);
