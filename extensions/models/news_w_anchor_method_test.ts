@@ -40,7 +40,7 @@ const RSS_ONE = `<?xml version="1.0"?><rss version="2.0"><channel>
 
 const ARTICLE_HTML = `<html><head>
   <meta property="og:image" content="https://feed.example/img/joke-1.jpg">
-  <meta property="og:description" content="Full blurb from the page.">
+  <meta property="og:description" content="A fuller blurb pulled from the article page for the embed.">
 </head><body>...</body></html>`;
 
 function router(req: Request): Response {

@@ -7,6 +7,7 @@ import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
 import {
   buildEmbed,
   canonicalizeUrl,
+  decodeEntities,
   type FeedItem,
   firstImageSrc,
   parseFeed,
@@ -192,6 +193,15 @@ Deno.test("stripHtml: strips entity-encoded HTML (the &lt;img&gt; blurb case)", 
   const raw =
     "&lt;img width=\"300\" src=\"https://e.com/x.jpg\" /&gt; The joke text is here.";
   assertEquals(stripHtml(raw), "The joke text is here.");
+});
+
+Deno.test("decodeEntities: named, decimal, hex, and double-encoded", () => {
+  assertEquals(decodeEntities("Tom &amp; Jerry"), "Tom & Jerry");
+  assertEquals(decodeEntities("Women&#039;s News"), "Women's News");
+  assertEquals(decodeEntities("caf&#xe9;"), "café");
+  // double-encoded: &amp;#039; -> &#039; -> '
+  assertEquals(decodeEntities("Women&amp;#039;s News"), "Women's News");
+  assertEquals(decodeEntities("plain text"), "plain text");
 });
 
 Deno.test("parseFeed: a blurb that is only an image tag becomes null", () => {

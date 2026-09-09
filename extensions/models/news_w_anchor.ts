@@ -117,6 +117,44 @@ export function canonicalizeUrl(raw: string): string {
   return `${parsed.protocol}//${parsed.host.toLowerCase()}${path}`;
 }
 
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  nbsp: " ",
+  hellip: "…",
+  mdash: "—",
+  ndash: "–",
+  rsquo: "’",
+  lsquo: "‘",
+  ldquo: "“",
+  rdquo: "”",
+};
+
+/**
+ * Decode HTML entities — named (`&amp;`), decimal (`&#039;`) and hex
+ * (`&#x27;`) — running twice so double-encoded input like `&amp;#039;`
+ * resolves fully.
+ */
+export function decodeEntities(text: string): string {
+  const once = (s: string): string =>
+    s
+      .replace(/&#x([0-9a-f]+);/gi, (_, h) => safeCodePoint(parseInt(h, 16)))
+      .replace(/&#(\d+);/g, (_, d) => safeCodePoint(parseInt(d, 10)))
+      .replace(
+        /&([a-z]+);/gi,
+        (m, name: string) => NAMED_ENTITIES[name.toLowerCase()] ?? m,
+      );
+  return once(once(text ?? ""));
+}
+
+/** `String.fromCodePoint` guarded against out-of-range values. */
+function safeCodePoint(code: number): string {
+  return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : "";
+}
+
 /**
  * Reduce a feed blurb — which may be plain text, HTML, or HTML that has
  * itself been entity-encoded (`&lt;img&gt;…`) — to clean plain text.
@@ -125,14 +163,7 @@ export function canonicalizeUrl(raw: string): string {
  * empty or tag-only input.
  */
 export function stripHtml(html: string): string {
-  return (html ?? "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&#0*39;|&apos;|&#x27;/gi, "'")
-    .replace(/&#0*34;|&quot;/gi, '"')
-    .replace(/&hellip;|&#8230;/gi, "…")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/&amp;/gi, "&")
+  return decodeEntities(html ?? "")
     .replace(/<[^>]*>/g, " ")
     .replace(/<!\[CDATA\[|\]\]>/g, " ")
     .replace(/\s+/g, " ")
@@ -517,7 +548,9 @@ async function enrichFromArticle(
     return {
       ...item,
       imageUrl: item.imageUrl ?? og.image,
-      summary: item.summary ?? og.description,
+      // A generic site tagline (e.g. Reductress's "Women's News. Feminized.")
+      // is shorter than a real excerpt — cleanSummary's floor drops it.
+      summary: item.summary ?? cleanSummary(og.description),
     };
   } catch (err) {
     logger.warn("Could not enrich {url}: {error}", {
