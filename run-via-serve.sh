@@ -10,7 +10,9 @@ set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT=9094
+INSTANCE=anchor
 WORKFLOW=morning-broadcast
+SERVER="ws://127.0.0.1:${PORT}"
 
 cd "$REPO_DIR"
 env -u SWAMP_SERVE_URL swamp serve --repo-dir "$REPO_DIR" --port "$PORT" \
@@ -26,4 +28,19 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 
-swamp workflow run "$WORKFLOW" --server "ws://127.0.0.1:${PORT}"
+swamp workflow run "$WORKFLOW" --server "$SERVER"
+
+# Export a Prometheus textfile for the Fun Stuff Grafana dashboard, derived
+# from the model's own data. Written atomically (tmp + mv) since
+# node_exporter's textfile collector may be reading concurrently.
+PROM_DIR=/var/lib/prometheus/node-exporter
+if [ -d "$PROM_DIR" ] && [ -w "$PROM_DIR" ]; then
+  PROM_TMP="$(mktemp "${PROM_DIR}/.news-w-anchor.prom.XXXXXX")"
+  {
+    swamp data get "$INSTANCE" ledger --server "$SERVER" --json 2>/dev/null || true
+    echo '---'
+    swamp data get "$INSTANCE" last-run --server "$SERVER" --json 2>/dev/null || true
+  } | python3 "${REPO_DIR}/prom-export.py" > "$PROM_TMP"
+  chmod 644 "$PROM_TMP"
+  mv "$PROM_TMP" "${PROM_DIR}/news-w-anchor.prom"
+fi
