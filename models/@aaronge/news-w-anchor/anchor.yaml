@@ -6,8 +6,6 @@ version: 1
 tags: {}
 globalArguments:
   webhookUrl: '${{ vault.get(news-secrets, DISCORD_WEBHOOK_URL) }}'
-  # dryRun stays true until live posting is explicitly authorized. While true,
-  # `broadcast` picks + records an article but sends nothing and does not
-  # touch the ledger.
-  dryRun: true
+  # Live posting authorized 2026-09-09 for testing before publish.
+  dryRun: false
 methods: {}

@@ -118,20 +118,23 @@ export function canonicalizeUrl(raw: string): string {
 }
 
 /**
- * Strip HTML tags from a string and collapse whitespace, decoding the
- * handful of entities that commonly survive feed parsing. Returns `""` for
+ * Reduce a feed blurb — which may be plain text, HTML, or HTML that has
+ * itself been entity-encoded (`&lt;img&gt;…`) — to clean plain text.
+ * Entities are decoded first so any now-visible tags can be stripped,
+ * then whitespace and CDATA artefacts are cleaned up. Returns `""` for
  * empty or tag-only input.
  */
 export function stripHtml(html: string): string {
   return (html ?? "")
-    .replace(/<[^>]*>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
+    .replace(/&nbsp;/gi, " ")
     .replace(/&#0*39;|&apos;|&#x27;/gi, "'")
+    .replace(/&#0*34;|&quot;/gi, '"')
     .replace(/&hellip;|&#8230;/gi, "…")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">")
+    .replace(/&amp;/gi, "&")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/<!\[CDATA\[|\]\]>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -205,6 +208,12 @@ export function buildEmbed(item: FeedItem): DiscordEmbed {
 /** Truncate to `max` characters, appending an ellipsis when shortened. */
 function truncate(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, max - 1).trimEnd()}…`;
+}
+
+/** Clean a feed blurb to plain text, or `null` if it's empty / too short to be useful. */
+function cleanSummary(raw: string | null): string | null {
+  const text = stripHtml(raw ?? "");
+  return text.length >= 25 ? text : null;
 }
 
 /**
@@ -315,7 +324,9 @@ export function parseFeed(xml: string, sourceName: string): FeedItem[] {
       title,
       url: link,
       id: guid && guid.length > 0 ? guid : canonicalizeUrl(link),
-      summary: textOf(raw["description"]) ?? textOf(raw["content:encoded"]),
+      summary: cleanSummary(
+        textOf(raw["description"]) ?? textOf(raw["content:encoded"]),
+      ),
       imageUrl: feedImage(raw),
       publishedAt: textOf(raw["pubDate"]),
     });
@@ -332,7 +343,7 @@ export function parseFeed(xml: string, sourceName: string): FeedItem[] {
       title,
       url: link,
       id: atomId && atomId.length > 0 ? atomId : canonicalizeUrl(link),
-      summary: textOf(raw["summary"]) ?? textOf(raw["content"]),
+      summary: cleanSummary(textOf(raw["summary"]) ?? textOf(raw["content"])),
       imageUrl: feedImage(raw),
       publishedAt: textOf(raw["updated"]) ?? textOf(raw["published"]),
     });
@@ -354,8 +365,13 @@ const GlobalArgsSchema = z.object({
   feeds: z.array(FeedConfigSchema).min(1).default([...DEFAULT_FEEDS]).describe(
     "Satire feeds to draw from. Defaults to a built-in rotation of 7.",
   ),
-  username: z.string().default("News w/ Anchor").describe(
+  username: z.string().default("News Wanchor").describe(
     "Overrides the webhook's display name on each post.",
+  ),
+  avatarUrl: z.string().url().optional().describe(
+    "Optional image URL for the poster's avatar (Discord's `avatar_url` " +
+      "webhook override). Omit to use whatever avatar the webhook is " +
+      "configured with in Discord.",
   ),
   ledgerSize: z.number().int().positive().default(1500).describe(
     "Maximum entries kept in the de-duplication ledger; oldest are pruned.",
@@ -543,6 +559,7 @@ export const model = {
         const {
           feeds,
           username,
+          avatarUrl,
           webhookUrl,
           ledgerSize,
           enrichFromArticle: enrich,
@@ -614,7 +631,11 @@ export const model = {
         const resp = await fetch(webhookUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, embeds: [embed] }),
+          body: JSON.stringify({
+            username,
+            avatar_url: avatarUrl,
+            embeds: [embed],
+          }),
           signal: AbortSignal.timeout(10000),
         });
         if (!resp.ok) {

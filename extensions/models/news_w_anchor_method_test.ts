@@ -21,7 +21,8 @@ const WEBHOOK = "https://discord.example/api/webhooks/1/abc";
 const GLOBAL_ARGS = {
   webhookUrl: WEBHOOK,
   feeds: [{ name: "Example News", url: FEED_URL }],
-  username: "News w/ Anchor",
+  username: "News Wanchor",
+  avatarUrl: undefined as string | undefined,
   ledgerSize: 1500,
   enrichFromArticle: true,
   dryRun: false,
@@ -85,7 +86,8 @@ Deno.test("broadcast (live): posts an embed, then writes ledger + broadcast", as
   assert(post, "Discord POST was made");
   assertEquals(post?.method, "POST");
   const body = JSON.parse(post!.body ?? "{}");
-  assertEquals(body.username, "News w/ Anchor");
+  assertEquals(body.username, "News Wanchor");
+  assertEquals(body.avatar_url, undefined);
   assertEquals(body.embeds[0].title, "Local Man Still Talking");
   assertEquals(body.embeds[0].url, ARTICLE_URL);
   assertEquals(body.embeds[0].image.url, "https://feed.example/img/joke-1.jpg");
@@ -178,6 +180,22 @@ Deno.test("broadcast: Discord failure throws and writes nothing", async () => {
     "Discord webhook failed (500)",
   );
   assertEquals(getWrittenResources().length, 0);
+});
+
+Deno.test("broadcast: avatarUrl is sent as avatar_url when set", async () => {
+  const { context } = createModelTestContext({
+    globalArgs: { ...GLOBAL_ARGS, avatarUrl: "https://cdn.example/anchor.png" },
+    methodName: "broadcast",
+  });
+
+  const { calls } = await withMockedFetch(
+    router,
+    () => model.methods.broadcast.execute({}, asCtx(context)),
+  );
+
+  const post = calls.find((c) => c.url.startsWith(WEBHOOK));
+  const body = JSON.parse(post!.body ?? "{}");
+  assertEquals(body.avatar_url, "https://cdn.example/anchor.png");
 });
 
 Deno.test("broadcast: enrichFromArticle=false skips the article fetch", async () => {

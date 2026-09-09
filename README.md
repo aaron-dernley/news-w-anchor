@@ -55,7 +55,8 @@ swamp extension pull @aaronge/news-w-anchor
 | ------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
 | `webhookUrl`        | _(required)_            | Discord incoming-webhook URL. Prefer a `${{ vault.get(...) }}` reference over plaintext. |
 | `feeds`             | 7 built-in satire feeds | `[{ name, url }]`. Replaces the default list entirely — point it at any RSS 2.0 or Atom feeds. |
-| `username`          | `News w/ Anchor`        | Overrides the webhook's display name on each post.                                      |
+| `username`          | `News Wanchor`          | Overrides the webhook's display name on each post.                                      |
+| `avatarUrl`         | _(none)_                | Optional image URL for the poster's avatar (`avatar_url` webhook override). Omit to use the webhook's configured avatar. |
 | `ledgerSize`        | `1500`                  | Max entries kept in the de-duplication ledger; oldest are pruned.                       |
 | `enrichFromArticle` | `true`                  | When the feed item has no image or blurb, fetch the article page once and read its Open Graph tags. |
 | `dryRun`            | `false`                 | When true, do everything except the Discord POST and the ledger write.                  |

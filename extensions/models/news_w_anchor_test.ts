@@ -77,7 +77,7 @@ const ATOM_FEED = `<?xml version="1.0" encoding="utf-8"?>
     <title>An Open Letter To The Raccoon In My Compost</title>
     <link rel="alternate" href="https://www.mcsweeneys.net/articles/an-open-letter"/>
     <id>https://www.mcsweeneys.net/articles/an-open-letter</id>
-    <summary>Dear Sir or Madam...</summary>
+    <summary>Dear Sir or Madam, we need to talk about the boundaries of this arrangement.</summary>
     <updated>2026-09-07T12:00:00Z</updated>
   </entry>
   <entry>
@@ -128,7 +128,10 @@ Deno.test("parseFeed: Atom feed, link resolution and id fallback", () => {
   assertEquals(items.length, 2);
   assertEquals(items[0].url, "https://www.mcsweeneys.net/articles/an-open-letter");
   assertEquals(items[0].id, "https://www.mcsweeneys.net/articles/an-open-letter");
-  assertEquals(items[0].summary, "Dear Sir or Madam...");
+  assertEquals(
+    items[0].summary,
+    "Dear Sir or Madam, we need to talk about the boundaries of this arrangement.",
+  );
   assertEquals(items[1].id, "https://www.mcsweeneys.net/articles/reasons-ranked");
   assertEquals(items[1].publishedAt, "2026-09-05T08:00:00Z");
 });
@@ -183,6 +186,23 @@ Deno.test("stripHtml: removes tags, collapses whitespace, decodes common entitie
   );
   assertEquals(stripHtml("<img src='x'>"), "");
   assertEquals(stripHtml(""), "");
+});
+
+Deno.test("stripHtml: strips entity-encoded HTML (the &lt;img&gt; blurb case)", () => {
+  const raw =
+    "&lt;img width=\"300\" src=\"https://e.com/x.jpg\" /&gt; The joke text is here.";
+  assertEquals(stripHtml(raw), "The joke text is here.");
+});
+
+Deno.test("parseFeed: a blurb that is only an image tag becomes null", () => {
+  const xml = `<rss version="2.0"><channel><item>
+    <title>Just an image</title>
+    <link>https://e.com/a</link>
+    <description><![CDATA[<img src="https://e.com/a.jpg" />]]></description>
+  </item></channel></rss>`;
+  const items = parseFeed(xml, "x");
+  assertEquals(items[0].summary, null);
+  assertEquals(items[0].imageUrl, "https://e.com/a.jpg");
 });
 
 Deno.test("firstImageSrc: returns the first <img> src or null", () => {
