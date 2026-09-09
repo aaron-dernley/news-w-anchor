@@ -13,6 +13,7 @@ import {
   parseFeed,
   parseOpenGraph,
   pickRandom,
+  sampleN,
   stripHtml,
   toIsoTimestamp,
 } from "./news_w_anchor.ts";
@@ -306,4 +307,17 @@ Deno.test("pickRandom: deterministic with a seeded rng", () => {
 
 Deno.test("pickRandom: throws on empty array", () => {
   assertThrows(() => pickRandom([]), Error, "empty");
+});
+
+Deno.test("sampleN: returns n distinct items, or all when n exceeds length", () => {
+  const arr = ["a", "b", "c", "d"];
+  const two = sampleN(arr, 2, () => 0);
+  assertEquals(two.length, 2);
+  assertEquals(new Set(two).size, 2);
+  assertEquals(sampleN(arr, 10).length, 4);
+  assertEquals(sampleN([], 3), []);
+});
+
+Deno.test("sampleN: deterministic with a seeded rng", () => {
+  assertEquals(sampleN(["a", "b", "c"], 2, () => 0), ["a", "b"]);
 });

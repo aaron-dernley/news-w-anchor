@@ -259,6 +259,25 @@ export function pickRandom<T>(
   return items[Math.floor(rng() * items.length)];
 }
 
+/**
+ * Pick up to `n` distinct elements at random (partial Fisher–Yates). Returns
+ * fewer than `n` only when the array is shorter. `rng` is injectable for
+ * deterministic tests.
+ */
+export function sampleN<T>(
+  items: readonly T[],
+  n: number,
+  rng: () => number = Math.random,
+): T[] {
+  const pool = [...items];
+  const take = Math.min(n, pool.length);
+  for (let i = 0; i < take; i++) {
+    const j = i + Math.floor(rng() * (pool.length - i));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, take);
+}
+
 /** Coerce fast-xml-parser output (item, array of items, or undefined) to an array. */
 function asArray(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) return value as Record<string, unknown>[];
@@ -494,38 +513,77 @@ async function fetchFeedItems(
 ): Promise<FeedItem[]> {
   const all: FeedItem[] = [];
   for (const feed of feeds) {
-    try {
-      const resp = await fetch(feed.url, {
-        headers: { "User-Agent": USER_AGENT },
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!resp.ok) {
-        logger.warn("Feed {name} returned HTTP {status} — skipping", {
-          name: feed.name,
-          status: resp.status,
-        });
-        continue;
-      }
-      const items = parseFeed(await resp.text(), feed.name);
-      if (items.length === 0) {
-        logger.warn("Feed {name} parsed to zero items — skipping", {
-          name: feed.name,
-        });
-        continue;
-      }
+    const items = await fetchOneFeed(feed, logger);
+    if (items.length > 0) {
       logger.info("Feed {name}: {count} items", {
         name: feed.name,
         count: items.length,
       });
       all.push(...items);
-    } catch (err) {
-      logger.warn("Feed {name} failed: {error} — skipping", {
-        name: feed.name,
-        error: String(err),
-      });
     }
   }
   return all;
+}
+
+/** Build the embed for `item` and POST it to the webhook. Throws on non-2xx. */
+async function postToDiscord(
+  webhookUrl: string,
+  username: string,
+  avatarUrl: string | undefined,
+  item: FeedItem,
+): Promise<void> {
+  const resp = await fetch(webhookUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      username,
+      avatar_url: avatarUrl,
+      embeds: [buildEmbed(item)],
+    }),
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => "");
+    throw new Error(
+      `Discord webhook failed (${resp.status}): ${body.slice(0, 300)}`,
+    );
+  }
+}
+
+/**
+ * Fetch and parse a single feed. Returns `[]` (with a warning logged) on any
+ * network, HTTP, or parse failure — a dead feed never aborts a run.
+ */
+async function fetchOneFeed(
+  feed: { name: string; url: string },
+  logger: MethodContext["logger"],
+): Promise<FeedItem[]> {
+  try {
+    const resp = await fetch(feed.url, {
+      headers: { "User-Agent": USER_AGENT },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!resp.ok) {
+      logger.warn("Feed {name} returned HTTP {status} — skipping", {
+        name: feed.name,
+        status: resp.status,
+      });
+      return [];
+    }
+    const items = parseFeed(await resp.text(), feed.name);
+    if (items.length === 0) {
+      logger.warn("Feed {name} parsed to zero items — skipping", {
+        name: feed.name,
+      });
+    }
+    return items;
+  } catch (err) {
+    logger.warn("Feed {name} failed: {error} — skipping", {
+      name: feed.name,
+      error: String(err),
+    });
+    return [];
+  }
 }
 
 /**
@@ -635,7 +693,6 @@ export const model = {
 
         let chosen = pickRandom(candidates);
         if (enrich) chosen = await enrichFromArticle(chosen, context.logger);
-        const embed = buildEmbed(chosen);
 
         const record: Record<string, unknown> = {
           source: chosen.source,
@@ -661,22 +718,7 @@ export const model = {
           return { dataHandles: [handle] };
         }
 
-        const resp = await fetch(webhookUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            username,
-            avatar_url: avatarUrl,
-            embeds: [embed],
-          }),
-          signal: AbortSignal.timeout(10000),
-        });
-        if (!resp.ok) {
-          const body = await resp.text().catch(() => "");
-          throw new Error(
-            `Discord webhook failed (${resp.status}): ${body.slice(0, 300)}`,
-          );
-        }
+        await postToDiscord(webhookUrl, username, avatarUrl, chosen);
         context.logger.info("Posted to Discord: {title}", {
           title: chosen.title,
         });
@@ -703,6 +745,55 @@ export const model = {
         );
 
         return { dataHandles: [broadcastHandle, ledgerHandle] };
+      },
+    },
+    sample: {
+      description:
+        "Post one (or `perFeed`) random current article from EVERY configured " +
+        "feed — a one-shot way to eyeball how each source renders. Reads and " +
+        "writes NOTHING: the ledger is not consulted and not updated, so the " +
+        "daily broadcast can still surface these articles. Honors dryRun.",
+      arguments: z.object({
+        perFeed: z.number().int().positive().max(5).default(1).describe(
+          "How many articles to post from each feed.",
+        ),
+      }),
+      execute: async (args: { perFeed: number }, context: MethodContext) => {
+        const {
+          feeds,
+          username,
+          avatarUrl,
+          webhookUrl,
+          enrichFromArticle: enrich,
+          dryRun,
+        } = context.globalArgs;
+        context.logger.info(
+          "sample: {perFeed} article(s) from each of {count} feeds (dryRun={dryRun})",
+          { perFeed: args.perFeed, count: feeds.length, dryRun },
+        );
+
+        let posted = 0;
+        for (const feed of feeds) {
+          const items = await fetchOneFeed(feed, context.logger);
+          for (let pick of sampleN(items, args.perFeed)) {
+            if (enrich) pick = await enrichFromArticle(pick, context.logger);
+            if (dryRun) {
+              context.logger.info("dry run — would post {source}: {title}", {
+                source: pick.source,
+                title: pick.title,
+              });
+              continue;
+            }
+            await postToDiscord(webhookUrl, username, avatarUrl, pick);
+            posted++;
+            context.logger.info("Posted {source}: {title}", {
+              source: pick.source,
+              title: pick.title,
+            });
+          }
+        }
+        context.logger.info("sample complete — {posted} posted", { posted });
+        return { dataHandles: [] };
       },
     },
     forget: {

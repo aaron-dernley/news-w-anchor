@@ -92,6 +92,19 @@ with no image anywhere is still posted — just without one.
   run writes `discordStatus: "skipped-nothing-new"` and posts nothing. A
   quiet day is not an error.
 
+### Method `sample`
+
+```sh
+swamp model method run anchor sample                 # one article from every feed
+swamp model method run anchor sample --arg perFeed=2 # two from every feed
+```
+
+Posts one (or `perFeed`) random current article from **every** configured
+feed in a single run — a quick way to see how each source renders. It
+**reads and writes nothing**: the ledger is neither consulted nor updated
+and no `broadcast` record is written, so these posts leave no trace and the
+daily `broadcast` can still surface the same articles later. Honors `dryRun`.
+
 ### Method `forget`
 
 ```sh

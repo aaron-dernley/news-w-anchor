@@ -240,6 +240,61 @@ Deno.test("broadcast: one dead feed is skipped, a live one still posts", async (
   assertEquals(broadcast?.data.source, "Example News");
 });
 
+Deno.test("sample: posts one per feed, reads/writes no resources", async () => {
+  const feed2 = "https://feed2.example/rss";
+  const { context, getWrittenResources } = createModelTestContext({
+    globalArgs: {
+      ...GLOBAL_ARGS,
+      feeds: [
+        { name: "Example News", url: FEED_URL },
+        { name: "Feed Two", url: feed2 },
+      ],
+    },
+    methodName: "sample",
+    storedResources: {
+      // present, but sample must ignore it — this article is "seen"
+      ledger: {
+        entries: [{
+          id: "example:joke-1",
+          source: "Example News",
+          title: "Local Man Still Talking",
+          url: ARTICLE_URL,
+          postedAt: "t",
+        }],
+        updatedAt: "t",
+      },
+    },
+  });
+
+  const rss2 = RSS_ONE.replace("joke-1", "joke-2").replace(
+    ARTICLE_URL,
+    "https://feed2.example/posts/joke-2",
+  );
+  const { calls } = await withMockedFetch(
+    (req) => {
+      if (req.url === feed2) return new Response(rss2, { status: 200 });
+      return router(req);
+    },
+    () => model.methods.sample.execute({ perFeed: 1 }, asCtx(context)),
+  );
+
+  const posts = calls.filter((c) => c.url.startsWith(WEBHOOK));
+  assertEquals(posts.length, 2); // one per feed, ledger ignored
+  assertEquals(getWrittenResources().length, 0); // nothing persisted
+});
+
+Deno.test("sample (dryRun): posts nothing", async () => {
+  const { context } = createModelTestContext({
+    globalArgs: { ...GLOBAL_ARGS, dryRun: true },
+    methodName: "sample",
+  });
+  const { calls } = await withMockedFetch(
+    router,
+    () => model.methods.sample.execute({ perFeed: 1 }, asCtx(context)),
+  );
+  assert(!calls.some((c) => c.url.startsWith(WEBHOOK)));
+});
+
 Deno.test("forget: removes a ledger entry by URL", async () => {
   const { context, getWrittenResources } = createModelTestContext({
     globalArgs: GLOBAL_ARGS,
