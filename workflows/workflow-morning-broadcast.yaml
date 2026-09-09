@@ -1,0 +1,25 @@
+id: da97b817-1567-4a2f-be85-41b371d93a3a
+name: morning-broadcast
+description: >-
+  Runs the news-w-anchor `broadcast` method once: fetch every satire feed,
+  pick an article not yet in the ledger, post it to Discord, and record it.
+  Driven by the swamp-workflow-news-w-anchor systemd timer (via
+  run-via-serve.sh), so there is no trigger.schedule here. Honors the
+  anchor instance's dryRun flag.
+tags: {}
+jobs:
+  - name: broadcast
+    description: Pick and post one unseen satire article.
+    steps:
+      - name: post
+        description: news-w-anchor broadcast
+        task:
+          type: model_method
+          modelIdOrName: anchor
+          methodName: broadcast
+        dependsOn: []
+        weight: 0
+        allowFailure: false
+    dependsOn: []
+    weight: 0
+version: 1

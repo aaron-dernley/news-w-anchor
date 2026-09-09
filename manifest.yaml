@@ -1,0 +1,24 @@
+manifestVersion: 1
+name: "@aaronge/news-w-anchor"
+version: "2026.09.09.1"
+description: "Posts one unseen article a day from a rotation of satire news feeds (The Onion, ClickHole, Reductress, The Beaverton, The Hard Times, The Daily Mash, NewsThump) to a Discord channel, keeping a ledger so the same joke never lands twice."
+
+repository: https://github.com/aaron-dernley/news-w-anchor
+
+models:
+  - news_w_anchor.ts
+
+additionalFiles:
+  - README.md
+  - LICENSE
+
+platforms:
+  - linux-x86_64
+  - linux-aarch64
+  - darwin-aarch64
+  - darwin-x86_64
+
+labels:
+  - fun
+  - news
+  - discord
