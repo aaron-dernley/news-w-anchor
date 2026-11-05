@@ -619,6 +619,65 @@ async function enrichFromArticle(
   }
 }
 
+/** Default textfile-collector path for `exportMetrics`. */
+const DEFAULT_PROM_PATH =
+  "/var/lib/prometheus/node-exporter/news-w-anchor.prom";
+
+/** Escape a Prometheus label value: backslash, double quote, newline. */
+function promEscape(value: unknown): string {
+  return String(value)
+    .replaceAll("\\", "\\\\")
+    .replaceAll('"', '\\"')
+    .replaceAll("\n", " ");
+}
+
+/**
+ * Render the ledger and last run as Prometheus text-exposition lines, in the
+ * exact format the old prom-export.py wrote (the Fun Stuff dashboard reads
+ * these names and labels). Missing data degrades to whatever subset of
+ * metrics can still be produced — never a guessed value.
+ */
+export function renderPrometheus(
+  ledger: { entries?: Array<Record<string, unknown>> } | null,
+  lastRun: Record<string, unknown> | null,
+): string {
+  const entries = ledger?.entries ?? [];
+  const out = [
+    "# HELP news_w_anchor_posts_total Distinct articles posted to Discord so far (ledger size).",
+    "# TYPE news_w_anchor_posts_total gauge",
+    `news_w_anchor_posts_total ${entries.length}`,
+  ];
+
+  if (entries.length > 0) {
+    const latest = entries[entries.length - 1];
+    out.push(
+      "# HELP news_w_anchor_last_post The most recent article posted, labeled with its source and headline (value always 1).",
+      "# TYPE news_w_anchor_last_post gauge",
+      `news_w_anchor_last_post{source="${promEscape(latest.source ?? "")}",` +
+        `title="${promEscape(latest.title ?? "")}"} 1`,
+    );
+    const ms = Date.parse(String(latest.postedAt ?? ""));
+    if (!Number.isNaN(ms)) {
+      out.push(
+        "# HELP news_w_anchor_last_post_timestamp_seconds Unix time of the most recent article posted to Discord.",
+        "# TYPE news_w_anchor_last_post_timestamp_seconds gauge",
+        `news_w_anchor_last_post_timestamp_seconds ${Math.round(ms / 1000)}`,
+      );
+    }
+  }
+
+  const status = lastRun?.discordStatus;
+  if (status) {
+    out.push(
+      "# HELP news_w_anchor_last_run_status Outcome of the most recent broadcast run (1 on the current status label).",
+      "# TYPE news_w_anchor_last_run_status gauge",
+      `news_w_anchor_last_run_status{status="${promEscape(status)}"} 1`,
+    );
+  }
+
+  return out.join("\n") + "\n";
+}
+
 /** Model definition for `@aaronge/news-w-anchor`. */
 export const model = {
   type: "@aaronge/news-w-anchor",
@@ -825,6 +884,46 @@ export const model = {
           updatedAt: new Date().toISOString(),
         });
         return { dataHandles: [handle] };
+      },
+    },
+    exportMetrics: {
+      description:
+        "Write the ledger size, latest post and last run status as a " +
+        "Prometheus textfile-collector file. Written atomically (tmp file + " +
+        "rename) since node_exporter may be reading the directory " +
+        "concurrently. Skips with a warning, rather than failing, when the " +
+        "directory is missing or not writable. Writes no swamp data.",
+      arguments: z.object({
+        path: z.string().default(DEFAULT_PROM_PATH).describe(
+          "Destination .prom file inside node_exporter's textfile directory.",
+        ),
+      }),
+      execute: async (args: { path: string }, context: MethodContext) => {
+        const ledger = await readLedger(context);
+        const lastRun = await context.readResource("last-run");
+        const body = renderPrometheus(ledger, lastRun);
+        const dir = args.path.slice(0, args.path.lastIndexOf("/")) || ".";
+        const base = args.path.slice(args.path.lastIndexOf("/") + 1);
+        let tmp: string;
+        try {
+          tmp = await Deno.makeTempFile({ dir, prefix: `.${base}.` });
+        } catch (err) {
+          context.logger.warn(
+            "Skipping metrics export, {dir} not writable: {error}",
+            { dir, error: String(err) },
+          );
+          return { dataHandles: [] };
+        }
+        try {
+          await Deno.writeTextFile(tmp, body);
+          await Deno.chmod(tmp, 0o644);
+          await Deno.rename(tmp, args.path);
+        } catch (err) {
+          await Deno.remove(tmp).catch(() => {});
+          throw err;
+        }
+        context.logger.info("Wrote {path}", { path: args.path });
+        return { dataHandles: [] };
       },
     },
   },

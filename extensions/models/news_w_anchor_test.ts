@@ -13,6 +13,7 @@ import {
   parseFeed,
   parseOpenGraph,
   pickRandom,
+  renderPrometheus,
   sampleN,
   stripHtml,
   toIsoTimestamp,
@@ -320,4 +321,46 @@ Deno.test("sampleN: returns n distinct items, or all when n exceeds length", () 
 
 Deno.test("sampleN: deterministic with a seeded rng", () => {
   assertEquals(sampleN(["a", "b", "c"], 2, () => 0), ["a", "b"]);
+});
+
+Deno.test("renderPrometheus: empty input still reports a zero ledger size", () => {
+  assertEquals(
+    renderPrometheus(null, null),
+    "# HELP news_w_anchor_posts_total Distinct articles posted to Discord so far (ledger size).\n" +
+      "# TYPE news_w_anchor_posts_total gauge\n" +
+      "news_w_anchor_posts_total 0\n",
+  );
+});
+
+Deno.test("renderPrometheus: latest post labels are escaped, timestamp in seconds", () => {
+  const text = renderPrometheus(
+    {
+      entries: [
+        { source: "Old", title: "x", postedAt: "2026-01-01T00:00:00Z" },
+        {
+          source: "The Onion",
+          title: 'Man Says "Hi"\\Bye\nAgain',
+          postedAt: "2026-11-05T08:00:09.400Z",
+        },
+      ],
+    },
+    { discordStatus: "posted" },
+  );
+  assert(text.includes("news_w_anchor_posts_total 2\n"));
+  assert(
+    text.includes(
+      'news_w_anchor_last_post{source="The Onion",title="Man Says \\"Hi\\"\\\\Bye Again"} 1\n',
+    ),
+  );
+  assert(text.includes("news_w_anchor_last_post_timestamp_seconds 1793865609\n"));
+  assert(text.endsWith('news_w_anchor_last_run_status{status="posted"} 1\n'));
+});
+
+Deno.test("renderPrometheus: unparseable postedAt omits the timestamp metric", () => {
+  const text = renderPrometheus(
+    { entries: [{ source: "S", title: "T", postedAt: "" }] },
+    {},
+  );
+  assert(!text.includes("timestamp_seconds"));
+  assert(!text.includes("last_run_status"));
 });

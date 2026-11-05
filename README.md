@@ -114,6 +114,20 @@ swamp model method run anchor forget --arg url=https://www.theonion.com/some-art
 Removes an article from the ledger by URL or id so it can be posted again.
 No-op if it is not present.
 
+### Method `exportMetrics`
+
+```sh
+swamp model method run anchor exportMetrics
+swamp model method run anchor exportMetrics --input path=/tmp/news.prom
+```
+
+Writes the ledger size, the latest post (labeled with its source and
+headline) and the last run's status as a Prometheus textfile-collector file,
+`/var/lib/prometheus/node-exporter/news-w-anchor.prom` by default. Written
+atomically (tmp file + rename). If the directory is missing or not
+writable it logs a warning and skips rather than failing. Writes no swamp
+data.
+
 ### Resource `broadcast`
 
 The most recent run's outcome (instance `last-run`): `source`, `title`,
@@ -127,30 +141,32 @@ The de-duplication store — a single growing list of every article id posted
 to Discord (`{ id, source, title, url, postedAt }`), pruned to the most
 recent `ledgerSize` entries.
 
-## Scheduling
+## Workflow
 
-There is no schedule built into the model — run `broadcast` on whatever
-cadence you like. Two common ways:
+The `@aaronge/morning-broadcast` workflow ships in the package, so
+`swamp extension pull @aaronge/news-w-anchor` brings it along. It carries
+its own `trigger.schedule` (`0 8 * * *`), so a running `swamp serve` fires
+it daily at 08:00. Each run:
 
-### systemd timer + on-demand serve
+1. **broadcast** — `anchor.broadcast`, as above.
+2. **export** — `anchor.exportMetrics`. It runs even if the post failed, so
+   the dashboard still reflects the ledger and the last recorded run.
 
-A oneshot service runs a small script that brings up a `swamp serve` just
-long enough to run one method, then a timer fires it daily:
+The consuming repo needs an `anchor` model instance whose `webhookUrl`
+comes from a vault:
 
-```ini
-# /etc/systemd/system/news-w-anchor.timer
-[Timer]
-OnCalendar=*-*-* 08:30:00
-Persistent=true
-[Install]
-WantedBy=timers.target
+```sh
+swamp model create @aaronge/news-w-anchor anchor
+swamp workflow run @aaronge/morning-broadcast   # one manual run
 ```
 
-### Persistent serve
+To change the time without editing the package, override the trigger in the
+consuming repo: `swamp workflow trigger set @aaronge/morning-broadcast
+--schedule "30 8 * * *"`.
 
-If you already run `swamp serve` for this repo, wrap `broadcast` in a
-one-step workflow and give it a `trigger.schedule` cron
-(`"30 8 * * *"`); the serve scheduler fires it.
+`run-via-serve.sh` is legacy: it ran the same workflow from a systemd timer
+through a throwaway `swamp serve`, then wrote the textfile with
+`prom-export.py`. Both are kept for reference only.
 
 ## License
 

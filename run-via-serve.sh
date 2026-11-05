@@ -11,12 +11,12 @@ set -euo pipefail
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PORT=9094
 INSTANCE=anchor
-WORKFLOW=morning-broadcast
+WORKFLOW="@aaronge/morning-broadcast"
 SERVER="ws://127.0.0.1:${PORT}"
 
 cd "$REPO_DIR"
 env -u SWAMP_SERVE_URL swamp serve --repo-dir "$REPO_DIR" --port "$PORT" \
-  --host 127.0.0.1 --no-schedule --no-telemetry \
+  --host 127.0.0.1 --no-schedule \
   >/tmp/news-w-anchor-serve.log 2>&1 &
 SERVE_PID=$!
 trap 'kill "$SERVE_PID" 2>/dev/null || true' EXIT

@@ -1,12 +1,16 @@
 id: da97b817-1567-4a2f-be85-41b371d93a3a
-name: morning-broadcast
+name: "@aaronge/morning-broadcast"
 description: >-
   Runs the news-w-anchor `broadcast` method once: fetch every satire feed,
   pick an article not yet in the ledger, post it to Discord, and record it.
-  Driven by the swamp-workflow-news-w-anchor systemd timer (via
-  run-via-serve.sh), so there is no trigger.schedule here. Honors the
-  anchor instance's dryRun flag.
+  Then exports the ledger size, latest post and run status as a Prometheus
+  textfile metric for the Fun Stuff dashboard. Ships in the package and is
+  scheduled by `swamp serve` through trigger.schedule (daily 08:00) — this
+  replaces the systemd timer + run-via-serve.sh, which is now legacy.
+  Honors the anchor instance's dryRun flag.
 tags: {}
+trigger:
+  schedule: "0 8 * * *"
 jobs:
   - name: broadcast
     description: Pick and post one unseen satire article.
@@ -21,5 +25,25 @@ jobs:
         weight: 0
         allowFailure: false
     dependsOn: []
+    weight: 0
+  - name: export
+    description: >-
+      Write /var/lib/prometheus/node-exporter/news-w-anchor.prom. Depends on
+      broadcast only completing, so a failed post still refreshes the file
+      from the ledger and the last recorded run.
+    dependsOn:
+      - job: broadcast
+        condition:
+          type: completed
+    steps:
+      - name: exportMetrics
+        description: news-w-anchor exportMetrics
+        task:
+          type: model_method
+          modelIdOrName: anchor
+          methodName: exportMetrics
+        dependsOn: []
+        weight: 0
+        allowFailure: false
     weight: 0
 version: 1
