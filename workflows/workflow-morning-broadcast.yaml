@@ -5,8 +5,9 @@ description: >-
   pick an article not yet in the ledger, post it to Discord, and record it.
   Then exports the ledger size, latest post and run status as a Prometheus
   textfile metric for the Fun Stuff dashboard. Ships in the package and is
-  scheduled by `swamp serve` through trigger.schedule (daily 08:00) — this
-  replaces the systemd timer + run-via-serve.sh, which is now legacy.
+  scheduled by `swamp serve` through trigger.schedule (daily 08:00). It
+  replaced a systemd timer + run-via-serve.sh wrapper, both removed on
+  2026-11-05.
   Honors the anchor instance's dryRun flag.
 tags: {}
 trigger:

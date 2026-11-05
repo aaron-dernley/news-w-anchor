@@ -633,7 +633,7 @@ function promEscape(value: unknown): string {
 
 /**
  * Render the ledger and last run as Prometheus text-exposition lines, in the
- * exact format the old prom-export.py wrote (the Fun Stuff dashboard reads
+ * exact format the removed prom-export.py wrote (the Fun Stuff dashboard reads
  * these names and labels). Missing data degrades to whatever subset of
  * metrics can still be produced — never a guessed value.
  */
