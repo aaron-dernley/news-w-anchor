@@ -164,9 +164,10 @@ To change the time without editing the package, override the trigger in the
 consuming repo: `swamp workflow trigger set @aaronge/morning-broadcast
 --schedule "30 8 * * *"`.
 
-`run-via-serve.sh` is legacy: it ran the same workflow from a systemd timer
-through a throwaway `swamp serve`, then wrote the textfile with
-`prom-export.py`. Both are kept for reference only.
+The old `run-via-serve.sh` wrapper and `prom-export.py` ran the same
+workflow from a systemd timer through a throwaway `swamp serve`, then wrote
+the textfile. Both were removed on 2026-11-05: the shipped workflow and
+`anchor.exportMetrics` replace them.
 
 ## License
 
